@@ -349,8 +349,14 @@ class Run:
     # DMTCP writes each image to a temporary file and renames it into place,
     # so a new image has a new inode.  A time mark would miss images written
     # in the same second on a filesystem with 1 s mtimes (Lustre).
+    # The coordinator refuses a checkpoint until the last one has resumed.
+    n = self.test.ranks
+    if not os.environ.get("AUTOTEST_NO_WAIT_RUNNING"):  # DEBUG switch
+      self.wait_for(lambda: self.status() == (n, True), "the last resume")
     before = set(self.image_inodes().items())
-    self.command("-bc")  # May return before the images are written.
+    out = self.command("-bc")  # May return before the images are written.
+    if out.returncode != 0:
+      raise Failure("dmtcp_command -bc: " + " ".join(out.stdout.split()))
 
     def images():
       return len(set(self.image_inodes().items()) - before)

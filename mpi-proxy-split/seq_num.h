@@ -32,4 +32,23 @@ extern std::unordered_map<unsigned int, unsigned long> target;
 extern std::unordered_map<MPI_Comm, unsigned int> ggid_table;
 typedef std::pair<unsigned int, unsigned long> comm_seq_pair_t;
 
+// DEBUG (CI only): checkpoint progress to stderr with MANA_CKPTDBG set.
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+extern int g_world_rank;
+#define CKPTDBG(...)                                                       \
+  do {                                                                     \
+    if (getenv("MANA_CKPTDBG")) {                                          \
+      struct timespec ts_;                                                 \
+      clock_gettime(CLOCK_REALTIME, &ts_);                                 \
+      char b_[512];                                                        \
+      int n_ = snprintf(b_, sizeof(b_), "CKPTDBG %ld.%03ld r%d ",          \
+                        (long)ts_.tv_sec, ts_.tv_nsec / 1000000,           \
+                        g_world_rank);                                     \
+      snprintf(b_ + n_, sizeof(b_) - n_, __VA_ARGS__);                     \
+      fprintf(stderr, "%s\n", b_);                                        \
+    }                                                                      \
+  } while (0)
+
 #endif // ifndef SEQ_NUM_H

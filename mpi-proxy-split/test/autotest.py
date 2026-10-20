@@ -242,7 +242,36 @@ class Run:
       if cond():
         return
       time.sleep(0.1)
+    self.dump_stacks(what)
     raise Failure("timed out waiting for " + what)
+
+  def dump_stacks(self, what):
+    """DEBUG (CI only): with HANGTRACE_DIR set, every rank of this run dumps
+    its threads' stacks (debug/hangtrace.c) into the run's directory."""
+    if not os.environ.get("HANGTRACE_DIR"):
+      return
+    with open(os.path.join(self.dir, "hang-status.txt"), "w") as f:
+      f.write("timed out waiting for %s\n" % what)
+      f.write(self.command("-s").stdout)
+    tag = ("HOME=" + self.env["HOME"]).encode() + b"\0"
+    for environ in glob.glob("/proc/[0-9]*/environ"):
+      pid = environ.split("/")[2]
+      try:
+        with open(environ, "rb") as f:
+          mine = tag in f.read()
+        if mine and "lower-half" in os.readlink("/proc/%s/exe" % pid):
+          os.kill(int(pid), 50)
+      except (OSError, ValueError):
+        pass
+    time.sleep(10)
+    for path in glob.glob(os.path.join(os.environ["HANGTRACE_DIR"],
+                                       "hang.*.txt")):
+      out = os.path.join(self.dir, os.path.basename(path))
+      with open(out, "w") as f:
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "debug", "symhang.py"), path],
+                       stdout=f, stderr=subprocess.STDOUT)
+      os.unlink(path)
 
   def wait_running(self, what):
     """For a program without progress reports: every rank must run for 1 s."""
@@ -280,6 +309,7 @@ class Run:
       if not stalled:
         return
       if time.time() > end:
+        self.dump_stacks("progress " + what)
         raise Failure("timed out waiting for progress %s (ranks without "
                       "progress: %s)" % (what, " ".join(stalled)))
       time.sleep(0.1)

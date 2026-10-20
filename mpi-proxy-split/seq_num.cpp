@@ -274,6 +274,8 @@ try_drain_mpi_collective(int attemptId)
             KVDBResponse::SUCCESS);
     JASSERT(dmtcp::kvdb::get64(cs_id, key, &in_cs) == KVDBResponse::SUCCESS);
 
+    CKPTDBG("clock: attempt %d round %d converged %ld in_cs %ld", attemptId,
+            round_num, (long)num_converged, (long)in_cs);
     if (in_cs == 0 && num_converged == g_world_size) {
       return true;
     }

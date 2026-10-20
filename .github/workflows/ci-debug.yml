@@ -1,0 +1,67 @@
+name: CI debug (p2p_ssend_burst)
+
+# DEBUG (fork only): the CI container of mana-tests.yml, with checkpoint
+# progress prints (MANA_CKPTDBG) and a stack dump of every rank when autotest
+# times out (debug/hangtrace.c).
+on:
+  push:
+    branches: [ 'ci-debug-*' ]
+
+jobs:
+  debug:
+    name: Ubuntu 26.04 debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    container:
+      image: ubuntu:26.04
+      options: --security-opt seccomp=unconfined --shm-size=2g
+    env:
+      MANA_CKPTDBG: 1
+      MANA_DRAIN_STATS: 1
+      HANGTRACE_DIR: /tmp/hangtrace
+    steps:
+      - name: Install packages
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends build-essential gfortran git \
+            ca-certificates python3 mpich libmpich-dev libc6-dbg
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build
+        run: |
+          ./configure
+          make -j"$(nproc)" mana
+          gcc -shared -fPIC -O1 -o /tmp/libhangtrace.so \
+            mpi-proxy-split/test/debug/hangtrace.c
+          mkdir -p /tmp/hangtrace
+          nproc; uname -a; mpichversion | head -3
+
+      - name: Burst alone, 4 times
+        continue-on-error: true
+        run: |
+          export LD_PRELOAD=/tmp/libhangtrace.so
+          for i in 1 2 3 4; do
+            mpi-proxy-split/test/autotest.py --keep \
+              --workdir /tmp/autotest/alone$i p2p_ssend_burst || true
+          done
+
+      - name: Full suite, as in mana-tests.yml
+        continue-on-error: true
+        run: |
+          export LD_PRELOAD=/tmp/libhangtrace.so
+          mpi-proxy-split/test/autotest.py --retry-once \
+            --workdir /tmp/autotest/full
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autotest-debug-logs
+          path: |
+            /tmp/autotest/
+            !/tmp/autotest/**/ckpt_rank_*/*.dmtcp
+          if-no-files-found: ignore

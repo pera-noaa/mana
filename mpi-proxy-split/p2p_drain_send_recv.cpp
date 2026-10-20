@@ -601,6 +601,10 @@ waitForAllRanksDone()
     int64_t done = 0;
     kvGet(g_drain_db, "done", &done);
     g_drain_stats.done_polls++;
+    if (g_drain_stats.done_polls % 2000 == 1) {
+      CKPTDBG("drain: done polls %ld done %ld", (long)g_drain_stats.done_polls,
+              (long)done);
+    }
     if (done >= g_world_size) {
       break;
     }
@@ -686,6 +690,20 @@ drainWithoutBarriers()
     global_sent_messages = sums[0];
     global_recv_messages = sums[1];
     notices = sums[6];
+    {
+      static time_t last = 0;
+      time_t now = time(NULL);
+      if (g_drain_stats.iterations == 1 || now - last >= 2) {
+        last = now;
+        CKPTDBG("drain: it %ld pass %d db %s local %ld %ld %ld %ld %ld %ld %ld"
+                " sums %ld %ld %ld %ld %ld %ld %ld",
+                (long)g_drain_stats.iterations, dummy_pass, g_drain_db,
+                (long)local[0], (long)local[1], (long)local[2], (long)local[3],
+                (long)local[4], (long)local[5], (long)local[6], (long)sums[0],
+                (long)sums[1], (long)sums[2], (long)sums[3], (long)sums[4],
+                (long)sums[5], (long)sums[6]);
+      }
+    }
     bool received = sums[1] >= sums[0] && sums[2] == 0 && sums[3] == 0;
     if (received && sums[4] == 0 && sums[5] == 0) {
       break;
@@ -980,6 +998,8 @@ publishSsendNotices()
     g_ssend_notices.push_back({request, dest, ack_tag});
   }
   g_drain_stats.issends = (int64_t)g_ssend_notices.size();
+  CKPTDBG("issend: published %zu notices (db %s)", g_ssend_notices.size(),
+          g_drain_db);
 }
 
 static void
@@ -989,6 +1009,8 @@ awaitSsendAck(MPI_Request request)
                              [request](const SsendNotice &n)
                              { return n.request == request; });
   JASSERT(notice != g_ssend_notices.end())(request);
+  CKPTDBG("issend: await ack from %d tag %d", notice->receiver,
+          notice->ack_tag);
   MPI_Comm realComm =
     get_real_id((mana_mpi_handle){.comm = g_ssend_ack_comm}).comm;
   MPI_Request realRequest;
@@ -1055,6 +1077,7 @@ markSsendAcks()
     MPI_Comm comm = commByName(comm_hash, comm_instance);
     JASSERT(comm != MPI_COMM_NULL)(comm_hash)(comm_instance)
       .Text("The receiver of an MPI_Issend doesn't know its comm");
+    CKPTDBG("issend: notice %s", notice.c_str());
     if (markSsendAck(comm, source, tag, later_sends, sender, ack_tag)) {
       g_drain_stats.issends_buffered++;
     } else {
@@ -1067,6 +1090,7 @@ void
 sendOwedSsendAcks()
 {
   for (const SsendAck &ack : g_owed_acks) {
+    CKPTDBG("issend: owed ack to %d tag %d", ack.rank, ack.tag);
     sendSsendAck(ack.rank, ack.tag);
   }
   g_owed_acks.clear();

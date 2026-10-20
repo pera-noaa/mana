@@ -893,12 +893,14 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
       while (!__atomic_load_n(&g_libmpi_is_initialized, __ATOMIC_ACQUIRE)) {
         usleep(1000);
       }
+      CKPTDBG("presuspend: start");
       resetDrainStats();  // p2p_drain_send_recv.cpp
       uint64_t t0 = drainStatsNow();
       mana_state = CKPT_COLLECTIVE;
       // preSuspendBarrier() will send coord response and get worker state.
       // FIXME:  See commant at: dmtcpplugin.cpp:'case DMTCP_EVENT_PRESUSPEND'
       drain_mpi_collective();
+      CKPTDBG("presuspend: collective drained");
       // From here on, the checkpoint thread calls MPI.  With
       // MANA_P2P_WAIT=polling, no thread waits in the lower half for the
       // drain, so close it now (the lower half runs as MPI_THREAD_SINGLE).  In
@@ -914,7 +916,9 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
       } else {
         close_lower_half_except_blocked();
       }
+      CKPTDBG("presuspend: lower half closed");
       dmtcp_global_barrier("MPI:Drain-Send-Recv");
+      CKPTDBG("presuspend: past Drain-Send-Recv barrier");
       g_drain_stats.t_collective =
         drainStatsNow() - t0 - g_drain_stats.t_wait_lower_half;
       mana_state = CKPT_P2P;
@@ -922,6 +926,7 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
         lh_info->ckpt_uh_fs = (void *)getFS();
       }
       drainP2p(); // p2p_drain_send_recv.cpp
+      CKPTDBG("presuspend: p2p drained");
       lh_info->ckpt_uh_fs = NULL;
       openCkptFileFds();
       if (g_p2p_wait == P2P_WAIT_BLOCKING) {
@@ -936,11 +941,13 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
         g_drain_stats.t_collective += drainStatsNow() - t_nbc;
       }
       reportDrainStats();  // With MANA_DRAIN_STATS set
+      CKPTDBG("presuspend: done");
       printEventToStderr("EVENT_PRESUSPEND (done)");
       break;
     }
 
     case DMTCP_EVENT_PRECHECKPOINT: {
+      CKPTDBG("precheckpoint: start");
       printEventToStderr("EVENT_PRECHECKPOINT (drain send/recv)");
       // The threads are suspended now; let them back into the lower half
       // when they resume.
@@ -961,6 +968,7 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
       save_mana_header(file);
       const char *file2 = get_mpi_file_filename();
       save_mpi_files(file2);
+      CKPTDBG("precheckpoint: done");
       printEventToStderr("EVENT_PRECHECKPOINT (done)");
       // Save a copy of the break address before checkpoint
       old_brk = sbrk(0);
@@ -970,6 +978,7 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
     }
 
     case DMTCP_EVENT_RESUME: {
+      CKPTDBG("resume: start");
       printEventToStderr("EVENT_RESUME");
       processingOpenCkpFileFds = false;
       dmtcp_local_barrier("MPI:Reset-Drain-Send-Recv-Counters");
@@ -978,6 +987,7 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
       dmtcp_local_barrier("MPI:seq_num_reset");
       sendOwedSsendAcks(); // p2p_drain_send_recv.cpp
       mana_state = RUNNING;
+      CKPTDBG("resume: done");
       printEventToStderr("EVENT_RESUME (done)");
       break;
     }
@@ -987,6 +997,7 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
       initialize_wrappers();
       lh_info->uh_stack_start = uh_stack_start;
       lh_info->uh_stack_end = uh_stack_end;
+      CKPTDBG("restart: start");
       printEventToStderr("EVENT_RESTART");
       processingOpenCkpFileFds = false;
       logCkptFileFds();
@@ -1011,12 +1022,14 @@ mpi_plugin_event_hook(DmtcpEvent_t event, DmtcpEventData_t *data)
       mana_state = RESTART_REPLAY;
       dmtcp_global_barrier("MPI:replayMpiP2pOnRestart");
       replayMpiP2pOnRestart(); // p2p_log_replay.cpp
+      CKPTDBG("restart: replayed");
       sendOwedSsendAcks(); // p2p_drain_send_recv.cpp
       dmtcp_local_barrier("MPI:p2p_log_replay.cpp-void");
       const char *file = get_mpi_file_filename();
       restore_mpi_files(file);
       dmtcp_local_barrier("MPI:Restore-MPI-Files");
       mana_state = RUNNING;
+      CKPTDBG("restart: done");
       printEventToStderr("EVENT_RESTART (done)");
       break;
     }

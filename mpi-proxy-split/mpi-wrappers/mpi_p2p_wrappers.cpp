@@ -29,6 +29,7 @@
 #include "mpi_plugin.h"
 #include "p2p_log_replay.h"
 #include "p2p_drain_send_recv.h"
+#include "seq_num.h"  // DEBUG: CKPTDBG
 #include "jfilesystem.h"
 #include "protectedfds.h"
 #include "mpi_nextfunc.h"
@@ -252,10 +253,12 @@ void
 sendSsendAck(int rank, int tag)
 {
   MPI_Request request;
+  CKPTDBG("issend: ack to %d tag %d: send", rank, tag);
   int retval = MPI_Isend_internal(NULL, 0, MPI_BYTE, rank, tag,
                                   g_ssend_ack_comm, &request);
   JASSERT(retval == MPI_SUCCESS)(retval)(rank)(tag);
   retval = PMPI_Wait(&request, MPI_STATUS_IGNORE);
+  CKPTDBG("issend: ack to %d tag %d: sent", rank, tag);
   JASSERT(retval == MPI_SUCCESS)(retval)(rank)(tag);
 }
 

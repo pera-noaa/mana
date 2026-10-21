@@ -1,0 +1,42 @@
+name: DMTCP threadjoin repro
+
+on:
+  push:
+    branches: [ ci-debug-543 ]
+
+jobs:
+  repro:
+    name: ${{ matrix.tree }} ${{ matrix.patch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [ pinned, main ]
+        patch: [ none, ctid ]
+    container:
+      image: ubuntu:26.04
+      options: --security-opt seccomp=unconfined
+    steps:
+      - name: Install packages
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends build-essential git ca-certificates python3
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build DMTCP
+        run: |
+          ldd --version | head -1
+          if [ "${{ matrix.tree }}" = main ]; then
+            git clone -q https://github.com/dmtcp/dmtcp /tmp/d && cd /tmp/d
+            [ "${{ matrix.patch }}" = ctid ] && git apply $GITHUB_WORKSPACE/ci543/dmtcp_ctid_main.patch
+          else
+            cp -a dmtcp /tmp/d && cd /tmp/d
+            [ "${{ matrix.patch }}" = ctid ] && git apply $GITHUB_WORKSPACE/dmtcp_ctid.patch
+          fi
+          git log --oneline -1; git diff --stat
+          ./configure > /dev/null && make -j"$(nproc)" > /dev/null
+      - name: threadjoin
+        run: ci543/threadjoin.sh /tmp/d/bin

@@ -1,5 +1,5 @@
 diff --git a/src/threadlist.cpp b/src/threadlist.cpp
-index 41726a17..a968aeeb 100644
+index 41726a17..ffaf1e57 100644
 --- a/src/threadlist.cpp
 +++ b/src/threadlist.cpp
 @@ -314,6 +314,14 @@ ThreadList::initThread(Thread *th)
@@ -8,10 +8,10 @@ index 41726a17..a968aeeb 100644
    th->ctid = th->ptid;
 +#ifdef PR_GET_TID_ADDRESS
 +  // glibc 2.43+ has the kernel clear pd->joinstate, not pd->tid, at exit.
-+  pid_t *ctid = NULL;
++  uint64_t ctid = 0;  // The kernel writes 8 bytes, also on x32.
 +  if (_real_syscall(SYS_prctl, PR_GET_TID_ADDRESS, (long)&ctid, 0, 0, 0, 0,
-+                    0) == 0 && ctid != NULL) {
-+    th->ctid = ctid;
++                    0) == 0 && ctid != 0) {
++    th->ctid = (pid_t*)(uintptr_t)ctid;
 +  }
 +#endif
  

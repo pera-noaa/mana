@@ -33,7 +33,7 @@ jobs:
             git clone -q https://github.com/dmtcp/dmtcp /tmp/d && cd /tmp/d
             [ "${{ matrix.patch }}" = ctid ] && git apply $GITHUB_WORKSPACE/ci543/dmtcp_ctid_main.patch
           else
-            cp -a dmtcp /tmp/d && cd /tmp/d
+            ln -s $GITHUB_WORKSPACE/dmtcp /tmp/d && cd /tmp/d
             [ "${{ matrix.patch }}" = ctid ] && git apply $GITHUB_WORKSPACE/dmtcp_ctid.patch
           fi
           git log --oneline -1; git diff --stat

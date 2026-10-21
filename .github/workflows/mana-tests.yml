@@ -1,8 +1,8 @@
 name: MANA tests
 
 on:
-  pull_request:
-    branches: [ main ]
+  push:
+    branches: [ ci-debug-543 ]
 
 jobs:
   e2e:
@@ -23,7 +23,7 @@ jobs:
           # libc6-dbg: MANA needs the symbols of ld.so, which Ubuntu strips.
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
             --no-install-recommends build-essential gfortran git \
-            ca-certificates python3 mpich libmpich-dev libc6-dbg
+            ca-certificates python3 mpich libmpich-dev libc6-dbg gdb
 
       - uses: actions/checkout@v4
         with:
@@ -36,11 +36,11 @@ jobs:
 
       - name: Test MANA
         run: >
-          mpi-proxy-split/test/autotest.py --retry-once
-          --workdir /tmp/autotest
+          sh -c "ldd --version | head -1; mpi-proxy-split/test/autotest.py
+          --workdir /tmp/autotest threads_idle mmap_threads_quiet mmap_threads"
 
       - name: Keep the logs of failed tests
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: autotest-logs

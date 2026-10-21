@@ -106,6 +106,7 @@ TESTS = [
   Test("misc_calls", 2),
   Test("mmap_threads", 2),
   Test("mmap_threads_quiet", 2, args=["-q"], program="mmap_threads"),
+  Test("threads_idle", 2, args=["-q", "-n"], program="mmap_threads"),
   Test("fortran_nonblocking", 2),
   Test("finalize_unsync", 4, args=["8"], kind="run", restart=True,
        native_args=["1"]),
@@ -306,7 +307,52 @@ class Run:
     try:
       self.proc.wait(timeout=self.timeout(120))
     except subprocess.TimeoutExpired:
+      self.dump_threads()
       raise Failure("timed out waiting for the job to end")
+
+  def dump_threads(self):
+    """DEBUG #543: each job process's threads, and a gdb backtrace."""
+    out = []
+    for pid in sorted(os.listdir("/proc")):
+      if not pid.isdigit():
+        continue
+      try:
+        with open("/proc/%s/cmdline" % pid, "rb") as f:
+          cmd = f.read().replace(b"\0", b" ").decode(errors="replace")
+      except OSError:
+        continue
+      if "lower-half" not in cmd and self.test.program not in cmd:
+        continue
+      out.append("PROC %s %s" % (pid, cmd[:200]))
+      for tid in sorted(os.listdir("/proc/%s/task" % pid)):
+        d = "/proc/%s/task/%s/" % (pid, tid)
+        info = []
+        for name in ("comm", "stat", "wchan", "syscall", "stack"):
+          try:
+            with open(d + name) as f:
+              v = f.read().strip()
+            if name == "stat":
+              v = v.split(") ", 1)[1].split()[0]
+            info.append("%s=%s" % (name, v.replace("\n", " | ")[:300]))
+          except OSError as e:
+            info.append("%s=?" % name)
+        out.append("  TID %s %s" % (tid, " ".join(info)))
+      try:
+        with open("/proc/%s/maps" % pid) as f:
+          maps = f.read()
+        with open(os.path.join(self.dir, "maps.%s" % pid), "w") as f:
+          f.write(maps)
+      except OSError:
+        pass
+      g = subprocess.run(["gdb", "-batch", "-p", pid, "-ex", "info threads",
+                          "-ex", "thread apply all bt 12"],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, timeout=120)
+      out.append(g.stdout[-6000:])
+    text = "\n".join(out)
+    with open(os.path.join(self.dir, "threads.txt"), "w") as f:
+      f.write(text)
+    print(text)
 
   def image_inodes(self):
     inodes = {}

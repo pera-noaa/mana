@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "mana_test.h"
 
 #define NTHREADS 4
@@ -19,6 +21,8 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static uintptr_t live_lo[MAXLIVE], live_hi[MAXLIVE];
 static volatile int stop;
 static volatile long rounds[NTHREADS];
+static volatile pid_t tids[NTHREADS];
+static int idle;  // DEBUG -n: no mmap
 
 static void
 add_live(int slot, char *p, size_t len)
@@ -46,6 +50,25 @@ static void *
 worker(void *arg)
 {
   int t = (int)(intptr_t)arg;
+  tids[t] = (pid_t)syscall(SYS_gettid);
+  {
+    char *self = (char *)pthread_self();
+    for (int k = 0; k < 4096; k += 4) {
+      if (*(pid_t *)(self + k) == tids[t]) {
+        printf("DBG543 thread %d tid %d found at pthread_self()+%d\n", t, tids[t], k);
+      }
+    }
+    fflush(stdout);
+  }
+  if (idle) {
+    for (long r = 0; !stop; r++) {
+      usleep(1000);
+      rounds[t] = r;
+    }
+    printf("DBG543 thread %d exits\n", t);
+    fflush(stdout);
+    return NULL;
+  }
   uint64_t seed = 0x9e3779b97f4a7c15ULL * (t + 1);
   for (long r = 0; !stop; r++) {
     // Up to MAXLIVE / NTHREADS live mappings per thread.
@@ -75,14 +98,20 @@ worker(void *arg)
     }
     rounds[t] = r;
   }
+  printf("DBG543 thread %d exits\n", t);
+  fflush(stdout);
   return NULL;
 }
 
 int
 main(int argc, char **argv)
 {
-  int quiet = argc > 1 && strcmp(argv[1], "-q") == 0;
-  mt_init(&argc, &argv, quiet ? "mmap_threads_quiet" : "mmap_threads");
+  int quiet = 0;
+  for (int a = 1; a < argc; a++) {
+    quiet |= strcmp(argv[a], "-q") == 0;
+    idle |= strcmp(argv[a], "-n") == 0;
+  }
+  mt_init(&argc, &argv, idle ? "threads_idle" : quiet ? "mmap_threads_quiet" : "mmap_threads");
   pthread_t th[NTHREADS];
   for (int t = 0; t < NTHREADS; t++) {
     MT_CHECK(pthread_create(&th[t], NULL, worker, (void *)(intptr_t)t) == 0,
@@ -96,9 +125,17 @@ main(int argc, char **argv)
     }
   }
   stop = 1;
+  printf("DBG543 rank %d loop done, my tid %ld\n", mt_rank, (long)syscall(SYS_gettid));
   for (int t = 0; t < NTHREADS; t++) {
+    printf("DBG543 rank %d joining %d: tid %d, *(th+720)=%d rounds %ld\n", mt_rank, t, tids[t],
+           *(pid_t *)((char *)th[t] + 720), rounds[t]);
+    fflush(stdout);
     pthread_join(th[t], NULL);
+    printf("DBG543 rank %d joined %d\n", mt_rank, t);
+    fflush(stdout);
   }
+  printf("DBG543 rank %d before mt_finish\n", mt_rank);
+  fflush(stdout);
   mt_finish(it);
   return 0;
 }

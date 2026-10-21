@@ -1,0 +1,19 @@
+diff --git a/src/threadlist.cpp b/src/threadlist.cpp
+index d53da48d..4bb7100c 100644
+--- a/src/threadlist.cpp
++++ b/src/threadlist.cpp
+@@ -291,6 +291,14 @@ ThreadList::initThread(Thread *th)
+ 
+   th->ptid = (pid_t*)((char*) pthread_self() + TLSInfo_GetTidOffset());
+   th->ctid = th->ptid;
++#ifdef PR_GET_TID_ADDRESS
++  // glibc 2.43+ has the kernel clear pd->joinstate, not pd->tid, at exit.
++  pid_t *ctid = NULL;
++  if (_real_syscall(SYS_prctl, PR_GET_TID_ADDRESS, &ctid, 0, 0, 0) == 0 &&
++      ctid != NULL) {
++    th->ctid = ctid;
++  }
++#endif
+ 
+   JTRACE("starting thread") (th->tid);
+ 

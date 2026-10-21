@@ -31,6 +31,7 @@ jobs:
 
       - name: Build
         run: |
+          git -C dmtcp apply ../dmtcp_ctid.patch
           ./configure
           make -j"$(nproc)" mana
 

@@ -51,15 +51,6 @@ worker(void *arg)
 {
   int t = (int)(intptr_t)arg;
   tids[t] = (pid_t)syscall(SYS_gettid);
-  {
-    char *self = (char *)pthread_self();
-    for (int k = 0; k < 4096; k += 4) {
-      if (*(pid_t *)(self + k) == tids[t]) {
-        printf("DBG543 thread %d tid %d found at pthread_self()+%d\n", t, tids[t], k);
-      }
-    }
-    fflush(stdout);
-  }
   if (idle) {
     for (long r = 0; !stop; r++) {
       usleep(1000);
